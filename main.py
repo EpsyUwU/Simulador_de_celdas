@@ -1,33 +1,179 @@
+import math
 import random
-
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.animation import FuncAnimation
+from copy import deepcopy
+import imageio
+import pygame
+import numpy as np
 
 class SolarCell:
     def __init__(self):
-        self.electrons = 0 #cantidad inicial de electrones
+        self.electrons = 0  # cantidad inicial de electrones
 
-    def absorb_electrons(self, count): # Este método simula la absorción de electrones por parte de la celda solar.
-        self.electrons += count * 0.7
+    def absorb_electrons(self, count):
+        # La celda absorbe el 50% de los electrones que llegan, pero no más de 1000 electrones.
+        absorbed_electrons = min(count * 0.5, 1000 - self.electrons)
+        self.electrons += absorbed_electrons
 
-    def reflect_electrons(self, count):# Este método simula el reflejo de electrones por parte de la celda solar.
-        return count * 0.1
+    def reflect_electrons(self, count):
+        # La celda refleja el 30% de los electrones que llegan, pero no más de 1000 electrones.
+        reflected_electrons = min(count * 0.3, 1000 - self.electrons)
+        self.electrons += reflected_electrons
 
-    def lose_electrons(self, count): # Este método simula la pérdida de electrones por parte de la celda solar
-        return count * 0.2
+    def lose_electrons(self, count):
+        return count * 0.2  # La celda pierde el 20% de los electrones que llegan.
+
+
+
+
+def poisson_random(avg):
+    L = math.exp(-avg)
+    p = 1.0
+    k = 0
+
+    while True:
+        k += 1
+        p *= random.uniform(0, 1)
+        if p <= L:
+            break
+
+    return k - 1
+
 
 
 def simulate_cells(num_cells, num_electrons, simulation_time):
-    cells = [SolarCell() for _ in range(num_cells)]# Este bucle ejecutara SolarCell() dependiendo del numero de celdas que haya
+    cells = [SolarCell() for _ in range(num_cells)]
+    time_steps_per_second = 10  # Simulamos 10 time steps por cada segundo
+    result = []
 
-    for time_step in range(simulation_time): #Este bucle funciona en funcion del tiempo que le hayamos pedido
-        for _ in range(num_electrons): #
-            current_cell = random.choice(cells) #selecciona aleatoriamente una celda solar (SolarCell) de la lista cells y la asigna a la variable current_cell. Esto simula el hecho de que en cada iteración del bucle se está interactuando con una celda solar aleatoria.
-            current_electrons = current_cell.electrons + 1 #selecciona aleatoriamente una celda solar (SolarCell) de la lista cells y la asigna a la variable current_cell. Esto simula el hecho de que en cada iteración del bucle se está interactuando con una celda solar aleatoria.
+    for time_step in range(simulation_time * time_steps_per_second):
+        # Creamos una copia profunda de las celdas antes de cada segundo para simular de manera independiente
+        current_cells = [deepcopy(cell) for cell in cells]
 
-            current_cell.absorb_electrons(1) # Esta línea llama al método absorb_electrons de la celda seleccionada y le pasa un valor de 1. En el método absorb_electrons, se añade el 70% de los electrones pasados como argumento a la cantidad total de electrones de la celda. Esto simula la absorción del electrón recién llegado por parte de la celda.
-            current_cell.electrons += current_cell.reflect_electrons(current_electrons) # Aquí se llama al método reflect_electrons de la celda y se le pasa current_electrons como argumento. En el método reflect_electrons, se calcula el 10% de los electrones recibidos y se retorna el valor, que se suma a la cantidad total de electrones en la celda. Esto simula la parte de los electrones que se reflejan hacia otra celda.
-            current_cell.electrons -= current_cell.lose_electrons(current_electrons) #Esta línea llama al método lose_electrons de la celda y se le pasa current_electrons como argumento. En el método lose_electrons, se calcula el 20% de los electrones recibidos y se retorna el valor, que se resta de la cantidad total de electrones en la celda. Esto simula la parte de los electrones que se pierden y no llegan a ninguna otra celda.
+        for cell, current_cell in zip(cells, current_cells):
+            num_electrons_arrived = poisson_random(num_electrons)
+            for _ in range(num_electrons_arrived):
+                current_electrons = current_cell.electrons + 1
 
-    return [cell.electrons for cell in cells]
+                current_cell.absorb_electrons(1)
+                current_cell.reflect_electrons(current_electrons)
+                current_cell.electrons -= current_cell.lose_electrons(current_electrons)
+
+        # Guardamos el estado actual de las celdas en cada segundo
+        if time_step % time_steps_per_second == 0:
+            result.append([cell.electrons for cell in current_cells])
+
+    return result
+
+
+def plot_results(results):
+    num_seconds = len(results)
+    num_cells = len(results[0])
+    x = list(range(num_cells))
+
+    fig, ax = plt.subplots()
+    ax.set_ylim(0, max(max(arr) for arr in results) * 1.1)
+    ax.set_xlabel('Celdas Solares')
+    ax.set_ylabel('Cantidad de Electrones')
+
+    lines, = ax.plot(x, results[0], 'o-')
+
+    def update(frame):
+        ax.set_title(f'Segundo {frame + 1}')
+        lines.set_data(x, results[frame])
+        return lines,
+
+    ani = FuncAnimation(fig, update, frames=num_seconds, interval=1000)
+    plt.show()
+
+    return ani
+
+
+def save_animation_as_video(results, filename):
+    num_seconds = len(results)
+    num_cells = len(results[0])
+    x = list(range(num_cells))
+
+    fig, ax = plt.subplots()
+    ax.set_ylim(0, max(max(arr) for arr in results) * 1.1)
+    ax.set_xlabel('Celdas Solares')
+    ax.set_ylabel('Cantidad de Electrones')
+
+    lines, = ax.plot(x, results[0], 'o-')
+
+    def update(frame):
+        ax.set_title(f'Segundo {frame + 1}')
+        lines.set_data(x, results[frame])
+        return lines,
+
+    ani = FuncAnimation(fig, update, frames=num_seconds, interval=1000)
+
+    # Generar las imágenes para cada frame de la animación y almacenarlas en una lista
+    images = []
+    for frame in range(num_seconds):
+        update(frame)
+        fig.canvas.draw()
+        image = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+        image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        images.append(image)
+
+    # Guardar la lista de imágenes como un archivo de video utilizando imageio
+    imageio.mimsave(filename, images, fps=1)
+
+
+def save_animation_as_video(results, filename):
+    num_seconds = len(results)
+    num_cells = len(results[0])
+    x = list(range(num_cells))
+
+    fig, ax = plt.subplots()
+    ax.set_ylim(0, max(max(arr) for arr in results) * 1.1)
+    ax.set_xlabel('Celdas Solares')
+    ax.set_ylabel('Cantidad de Electrones')
+
+    lines, = ax.plot(x, results[0], 'o-')
+
+    def update(frame):
+        ax.set_title(f'Segundo {frame + 1}')
+        lines.set_data(x, results[frame])
+        return lines,
+
+    ani = FuncAnimation(fig, update, frames=num_seconds, interval=1000)
+
+    # Generar las imágenes para cada frame de la animación y almacenarlas en una lista
+    images = []
+    for frame in range(num_seconds):
+        update(frame)
+        fig.canvas.draw()
+        image = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+        image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+
+        # Voltear la imagen verticalmente
+        image = np.flipud(np.rot90(image))
+
+        images.append(image)
+
+    # Guardar la lista de imágenes como un archivo de video utilizando imageio
+    imageio.mimsave(filename, images, fps=1)
+
+    # Reproducir el video utilizando pygame
+    pygame.init()
+    screen = pygame.display.set_mode((fig.canvas.get_width_height()[0], fig.canvas.get_width_height()[1]))
+    pygame.display.set_caption("Video de la animación")
+    clock = pygame.time.Clock()
+
+    for image in images:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                return
+
+        surf = pygame.surfarray.make_surface(image)
+        screen.blit(surf, (0, 0))
+        pygame.display.flip()
+        clock.tick(1)  # Ajusta la velocidad de reproducción según lo desees (1 fps en este caso)
 
 
 if __name__ == "__main__":
@@ -35,8 +181,12 @@ if __name__ == "__main__":
     num_electrons = 50
     simulation_time = 10  # Definimos el tiempo de simulación (número de pasos de tiempo)
 
-    final_electrons = simulate_cells(num_cells, num_electrons, simulation_time) #Mando la informacion de los primeros 3 parametros
-    print(final_electrons)
+    simulation_results = simulate_cells(num_cells, num_electrons, simulation_time)
 
+    for i, arr in enumerate(simulation_results, start=1):
+        print(f"Segundo {i}: {arr}")
+
+    # Guardar y reproducir los resultados como un archivo de video
+    save_animation_as_video(simulation_results, "simulation_results.mp4")
 # Lo que falta
 # Un cubo con los resultados de la simulacion libreria de videos, poisson en la llegada de los electrones.
